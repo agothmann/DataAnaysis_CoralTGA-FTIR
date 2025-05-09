@@ -44,6 +44,7 @@ for A = 1:file_tot
     RunEnd_A = SpaData{DataRow_A,3}; 
     RunDivision_A = SpaData{DataRow_A,4};
     subtract_A = SpaData{DataRow_A,5};
+    back_corr_A = SpaData{DataRow_A,6};
     
     STEP_A = ((RunEnd_A-RunStart_A)/(RunDivision_A-1));
     FTIR_time_A = RunStart_A:STEP_A:RunEnd_A;
@@ -86,6 +87,33 @@ for A = 1:file_tot
     TGA_temp_A = cell2mat(TGA_data_A(:,2));
     weight_A = cell2mat(TGA_data_A(:,3));
     
+
+
+    % NEW ADDITION FOR BACKGROUND SUBTRACTION
+
+    % Cut FTIR_time off when it starts getting bigger than the end value of
+    % TGA_time
+    
+    %find the last value of TGA_time
+    lastTGA_A = TGA_time_A(1,end);
+    cutData_A = zeros(length(FTIR_time_A),1);
+    
+    index_A = 1;
+    for val_A = 1:length(FTIR_time_A) %comments in section above
+        if lastTGA_A < FTIR_time_A(1,val_A)
+            
+            cutData_A(index_A) = val_A;
+            index_A = index_A + 1;
+        end
+    end
+    
+    FTIR_time_A = FTIR_time_A(1,1:(cutData_A(1,1))-1);
+    
+    %END NEW ADDITION
+
+
+
+
     %INTERPOLATE instead of curve fit
     FTIR_temp_A = interp1(TGA_time_A,TGA_temp_A,FTIR_time_A);
     
@@ -104,19 +132,109 @@ for A = 1:file_tot
         end
     end
 
+    %formatting for backcor
+    FTIR_temp_A = FTIR_temp_A.';
+    WaterDataA = WaterDataA.';
+    CO2DataA = CO2DataA.';
+
+    %Cutting CO2 data at temp 50
+    CO2_cut = 50;
+    new_CO2_start = 0;
+    o = 1;
+    while new_CO2_start == 0
+        if floor(FTIR_temp_A(o,1)) > CO2_cut
+            new_CO2_start = o;
+        end
+        o = o + 1;
+    end
+    CO2DataA = CO2DataA(1, new_CO2_start:end);
+    FTIR_temp_CO2_A = FTIR_temp_A(new_CO2_start:end, 1);
+
+    %Cut H2O data at temp 40
+    H2O_cut = 40;
+    new_H2O_start = 0;
+    o = 1;
+    while new_H2O_start == 0
+        if floor(FTIR_temp_A(o,1)) > H2O_cut
+            new_H2O_start = o;
+        end
+        o = o + 1;
+    end
+    WaterDataA = WaterDataA(1, new_H2O_start:end);
+    FTIR_temp_H2O_A = FTIR_temp_A(new_H2O_start:end, 1);
+
+    ord_A = 4;
+    CO2ord_A = 2;
+    s = 0.01;
+    fct = 'atq';
+
+    if back_corr_A == 0
+        ord_A = 1;
+        CO2ord_A = 1;
+    end
+    
+    %THIS FUNCTION HAS NO POP UP
+    [z_A,a_A,it_A,ord_A,s_A,fct_A] = backcor(FTIR_temp_H2O_A, WaterDataA, ord_A, s, fct);
+    [zz_A, aa_A, itit_A, ordord_A, ss_A, fctfct_A] = backcor(FTIR_temp_CO2_A, CO2DataA, CO2ord_A, s, fct);
+
+
+    %{
+    %THIS FUNCTION HAS A POP UP ASKING YOU TO VERIFY THE BACKGROUND ORDER
+    %AND IT WILL SET THE THRESHOLD AND FUNC FOR YOU
+    [z_A, a_A, it_A, ord_A, s_A, fct_A] = backcor(FTIR_temp_H2O_A,WaterDataA);
+    [zz_A, aa_A, itit_A, ordord_A, ss_A, fctfct_A] = backcor(FTIR_temp_CO2_A, CO2DataA);
+    %}
+
+
+    if ~isempty(z_A)
+        
+        [FTIR_temp_H2O_A,i] = sort(FTIR_temp_H2O_A);
+        WaterDataA = WaterDataA(i);
+        z_A = z_A(i);
+        z_A = z_A.';
+        
+    end
+    
+    if ~isempty(zz_A)
+        
+        [FTIR_temp_CO2_A,i] = sort(FTIR_temp_CO2_A);
+        CO2DataA = CO2DataA(i);
+        zz_A = zz_A(i);
+        zz_A = zz_A.';
+        
+    end
+
+
+
     colorA = [rand rand rand];
     figure(1) %WATER PEAKS
-    plot(FTIR_temp_A,WaterDataA, "LineWidth",1,"Color",colorA)
+    plot(FTIR_temp_H2O_A,WaterDataA-z_A, "LineWidth",1,"Color",colorA)
     legstr{A}=filenameA;
     hold on
+
+    %{
+    figure(2) %CO2 PEAKS
+    plot(FTIR_temp_CO2_A,CO2DataA-zz_A, "LineWidth",1,"Color",colorA)
+    legstr{A}=filenameA;
+    hold on
+%}
 end
 legend(legstr, "Location","northwest")
-title("H2O Data - absorption at peak wavenumber")
+title("All H2O Peaks (BKG CORR) ")
 xlabel("Temp (C)")
 ylabel("H2O Absorption")
 grid on
 hold off
 
+%{
+%CO2
+legend(legstr, "Location","northwest")
+title("All CO2 Peaks (BKG CORR)")
+xlabel("Temp (C)")
+ylabel("CO2 Absorption")
+grid on
+hold off
+%}
 
 
 
@@ -127,6 +245,7 @@ hold off
 %START WITH ERP
 
 ERP_tot = 5;
+
 
 for A = 1:ERP_tot
     [filenameA, pathnameA] = uigetfile( ...
@@ -169,6 +288,7 @@ for A = 1:ERP_tot
     RunEnd_A = SpaData{DataRow_A,3}; 
     RunDivision_A = SpaData{DataRow_A,4};
     subtract_A = SpaData{DataRow_A,5};
+    back_corr_A = SpaData{DataRow_A,6};
     
     STEP_A = ((RunEnd_A-RunStart_A)/(RunDivision_A-1));
     FTIR_time_A = RunStart_A:STEP_A:RunEnd_A;
@@ -211,6 +331,33 @@ for A = 1:ERP_tot
     TGA_temp_A = cell2mat(TGA_data_A(:,2));
     weight_A = cell2mat(TGA_data_A(:,3));
     
+
+
+    % NEW ADDITION FOR BACKGROUND SUBTRACTION
+
+    % Cut FTIR_time off when it starts getting bigger than the end value of
+    % TGA_time
+    
+    %find the last value of TGA_time
+    lastTGA_A = TGA_time_A(1,end);
+    cutData_A = zeros(length(FTIR_time_A),1);
+    
+    index_A = 1;
+    for val_A = 1:length(FTIR_time_A) %comments in section above
+        if lastTGA_A < FTIR_time_A(1,val_A)
+            
+            cutData_A(index_A) = val_A;
+            index_A = index_A + 1;
+        end
+    end
+    
+    FTIR_time_A = FTIR_time_A(1,1:(cutData_A(1,1))-1);
+    
+    %END NEW ADDITION
+
+
+
+
     %INTERPOLATE instead of curve fit
     FTIR_temp_A = interp1(TGA_time_A,TGA_temp_A,FTIR_time_A);
     
@@ -229,22 +376,95 @@ for A = 1:ERP_tot
         end
     end
 
-    colorA = [rand rand rand];
+    %formatting for backcor
+    FTIR_temp_A = FTIR_temp_A.';
+    WaterDataA = WaterDataA.';
+    CO2DataA = CO2DataA.';
 
+    %Cutting CO2 data at temp 50
+    CO2_cut = 50;
+    new_CO2_start = 0;
+    o = 1;
+    while new_CO2_start == 0
+        if floor(FTIR_temp_A(o,1)) > CO2_cut
+            new_CO2_start = o;
+        end
+        o = o + 1;
+    end
+    CO2DataA = CO2DataA(1, new_CO2_start:end);
+    FTIR_temp_CO2_A = FTIR_temp_A(new_CO2_start:end, 1);
+
+    %Cut H2O data at temp 40
+    H2O_cut = 40;
+    new_H2O_start = 0;
+    o = 1;
+    while new_H2O_start == 0
+        if floor(FTIR_temp_A(o,1)) > H2O_cut
+            new_H2O_start = o;
+        end
+        o = o + 1;
+    end
+    WaterDataA = WaterDataA(1, new_H2O_start:end);
+    FTIR_temp_H2O_A = FTIR_temp_A(new_H2O_start:end, 1);
+
+    ord_A = 4;
+    CO2ord_A = 2;
+    s = 0.01;
+    fct = 'atq';
+
+    if back_corr_A == 0
+        ord_A = 1;
+        CO2ord_A = 1;
+    end
+    
+    %THIS FUNCTION HAS NO POP UP
+    [z_A,a_A,it_A,ord_A,s_A,fct_A] = backcor(FTIR_temp_H2O_A, WaterDataA, ord_A, s, fct);
+    [zz_A, aa_A, itit_A, ordord_A, ss_A, fctfct_A] = backcor(FTIR_temp_CO2_A, CO2DataA, CO2ord_A, s, fct);
+
+
+    %{
+    %THIS FUNCTION HAS A POP UP ASKING YOU TO VERIFY THE BACKGROUND ORDER
+    %AND IT WILL SET THE THRESHOLD AND FUNC FOR YOU
+    [z_A, a_A, it_A, ord_A, s_A, fct_A] = backcor(FTIR_temp_H2O_A,WaterDataA);
+    [zz_A, aa_A, itit_A, ordord_A, ss_A, fctfct_A] = backcor(FTIR_temp_CO2_A, CO2DataA);
+    %}
+
+
+    if ~isempty(z_A)
+        
+        [FTIR_temp_H2O_A,i] = sort(FTIR_temp_H2O_A);
+        WaterDataA = WaterDataA(i);
+        z_A = z_A(i);
+        z_A = z_A.';
+        
+    end
+    
+    if ~isempty(zz_A)
+        
+        [FTIR_temp_CO2_A,i] = sort(FTIR_temp_CO2_A);
+        CO2DataA = CO2DataA(i);
+        zz_A = zz_A(i);
+        zz_A = zz_A.';
+        
+    end
+
+
+
+    colorA = [rand rand rand];
     figure(2) %WATER PEAKS
-    plot(FTIR_temp_A,WaterDataA, "LineWidth",1,"Color",colorA)
+    plot(FTIR_temp_H2O_A,WaterDataA-z_A, "LineWidth",1,"Color",colorA)
     legstr{A}=filenameA;
-    hold on  
+    hold on
 
     %{
     figure(2) %CO2 PEAKS
-    plot(FTIR_temp_A,CO2DataA, "LineWidth",1,"Color",colorA)
+    plot(FTIR_temp_CO2_A,CO2DataA-zz_A, "LineWidth",1,"Color",colorA)
     legstr{A}=filenameA;
     hold on
 %}
 end
 legend(legstr, "Location","northwest")
-title("H2O Data - ERP absorption")
+title("H2O Data - ERP absorption (BKG CORR)")
 xlabel("Temp (C)")
 ylabel("H2O Absorption")
 grid on
@@ -253,7 +473,7 @@ hold off
 %{
 %CO2
 legend(legstr, "Location","northwest")
-title("CO2 Data - ERP absorption")
+title("CO2 Data - ERP absorption (BKG CORR)")
 xlabel("Temp (C)")
 ylabel("CO2 Absorption")
 grid on
@@ -267,6 +487,7 @@ hold off
 
 
 CWC_tot = 4;
+
 
 for A = 1:CWC_tot
     [filenameA, pathnameA] = uigetfile( ...
@@ -309,6 +530,7 @@ for A = 1:CWC_tot
     RunEnd_A = SpaData{DataRow_A,3}; 
     RunDivision_A = SpaData{DataRow_A,4};
     subtract_A = SpaData{DataRow_A,5};
+    back_corr_A = SpaData{DataRow_A,6};
     
     STEP_A = ((RunEnd_A-RunStart_A)/(RunDivision_A-1));
     FTIR_time_A = RunStart_A:STEP_A:RunEnd_A;
@@ -351,6 +573,33 @@ for A = 1:CWC_tot
     TGA_temp_A = cell2mat(TGA_data_A(:,2));
     weight_A = cell2mat(TGA_data_A(:,3));
     
+
+
+    % NEW ADDITION FOR BACKGROUND SUBTRACTION
+
+    % Cut FTIR_time off when it starts getting bigger than the end value of
+    % TGA_time
+    
+    %find the last value of TGA_time
+    lastTGA_A = TGA_time_A(1,end);
+    cutData_A = zeros(length(FTIR_time_A),1);
+    
+    index_A = 1;
+    for val_A = 1:length(FTIR_time_A) %comments in section above
+        if lastTGA_A < FTIR_time_A(1,val_A)
+            
+            cutData_A(index_A) = val_A;
+            index_A = index_A + 1;
+        end
+    end
+    
+    FTIR_time_A = FTIR_time_A(1,1:(cutData_A(1,1))-1);
+    
+    %END NEW ADDITION
+
+
+
+
     %INTERPOLATE instead of curve fit
     FTIR_temp_A = interp1(TGA_time_A,TGA_temp_A,FTIR_time_A);
     
@@ -369,22 +618,96 @@ for A = 1:CWC_tot
         end
     end
 
-    colorA = [rand rand rand];
+    %formatting for backcor
+    FTIR_temp_A = FTIR_temp_A.';
+    WaterDataA = WaterDataA.';
+    CO2DataA = CO2DataA.';
+
+    %Cutting CO2 data at temp 50
+    CO2_cut = 50;
+    new_CO2_start = 0;
+    o = 1;
+    while new_CO2_start == 0
+        if floor(FTIR_temp_A(o,1)) > CO2_cut
+            new_CO2_start = o;
+        end
+        o = o + 1;
+    end
+    CO2DataA = CO2DataA(1, new_CO2_start:end);
+    FTIR_temp_CO2_A = FTIR_temp_A(new_CO2_start:end, 1);
+
+    %Cut H2O data at temp 40
+    H2O_cut = 40;
+    new_H2O_start = 0;
+    o = 1;
+    while new_H2O_start == 0
+        if floor(FTIR_temp_A(o,1)) > H2O_cut
+            new_H2O_start = o;
+        end
+        o = o + 1;
+    end
+    WaterDataA = WaterDataA(1, new_H2O_start:end);
+    FTIR_temp_H2O_A = FTIR_temp_A(new_H2O_start:end, 1);
+
+    ord_A = 4;
+    CO2ord_A = 2;
+    s = 0.01;
+    fct = 'atq';
+
+    if back_corr_A == 0
+        ord_A = 1;
+        CO2ord_A = 1;
+    end
     
+    %THIS FUNCTION HAS NO POP UP
+    [z_A,a_A,it_A,ord_A,s_A,fct_A] = backcor(FTIR_temp_H2O_A, WaterDataA, ord_A, s, fct);
+    [zz_A, aa_A, itit_A, ordord_A, ss_A, fctfct_A] = backcor(FTIR_temp_CO2_A, CO2DataA, CO2ord_A, s, fct);
+
+
+    %{
+    %THIS FUNCTION HAS A POP UP ASKING YOU TO VERIFY THE BACKGROUND ORDER
+    %AND IT WILL SET THE THRESHOLD AND FUNC FOR YOU
+    [z_A, a_A, it_A, ord_A, s_A, fct_A] = backcor(FTIR_temp_H2O_A,WaterDataA);
+    [zz_A, aa_A, itit_A, ordord_A, ss_A, fctfct_A] = backcor(FTIR_temp_CO2_A, CO2DataA);
+    %}
+
+
+    if ~isempty(z_A)
+        
+        [FTIR_temp_H2O_A,i] = sort(FTIR_temp_H2O_A);
+        WaterDataA = WaterDataA(i);
+        z_A = z_A(i);
+        z_A = z_A.';
+        
+    end
+    
+    if ~isempty(zz_A)
+        
+        [FTIR_temp_CO2_A,i] = sort(FTIR_temp_CO2_A);
+        CO2DataA = CO2DataA(i);
+        zz_A = zz_A(i);
+        zz_A = zz_A.';
+        
+    end
+
+
+
+    colorA = [rand rand rand];
     figure(3) %WATER PEAKS
-    plot(FTIR_temp_A,WaterDataA, "LineWidth",1,"Color",colorA)
+    plot(FTIR_temp_H2O_A,WaterDataA-z_A, "LineWidth",1,"Color",colorA)
     legstr{A}=filenameA;
     hold on
-%{
+
+    %{
     figure(3) %CO2 PEAKS
-    plot(FTIR_temp_A,CO2DataA, "LineWidth",1,"Color",colorA)
+    plot(FTIR_temp_CO2_A,CO2DataA-zz_A, "LineWidth",1,"Color",colorA)
     legstr{A}=filenameA;
     hold on
 %}
 end
 %WATER
 legend(legstr, "Location","northwest")
-title("H2O Data - CWC absorption")
+title("H2O Data - CWC absorption (BKG CORR)")
 xlabel("Temp (C)")
 ylabel("H2O Absorption")
 grid on
@@ -393,7 +716,7 @@ hold off
 %{
 %CO2
 legend(legstr, "Location","northwest")
-title("CO2 Data - CWC absorption")
+title("CO2 Data - CWC absorption (BKG CORR)")
 xlabel("Temp (C)")
 ylabel("CO2 Absorption")
 grid on
